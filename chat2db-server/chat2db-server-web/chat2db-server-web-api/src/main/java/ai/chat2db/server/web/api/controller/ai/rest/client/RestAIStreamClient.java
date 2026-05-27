@@ -67,8 +67,8 @@ public class RestAIStreamClient {
             .Builder()
             .addInterceptor(new FastChatHeaderAuthorizationInterceptor(this.apiKey))
             .connectTimeout(10, TimeUnit.SECONDS)
-            .writeTimeout(50, TimeUnit.SECONDS)
-            .readTimeout(50, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS)
             .build();
     }
 
@@ -170,7 +170,7 @@ public class RestAIStreamClient {
             EventSource eventSource = factory.newEventSource(request, eventSourceListener);
             log.info("finish invoking rest ai");
         } catch (Exception e) {
-            log.error("rest ai error", e);
+            log.error("rest ai error, apiHost={}, model={}", apiHost, model, e);
             eventSourceListener.onFailure(null, e, null);
             throw new ParamBusinessException();
         }

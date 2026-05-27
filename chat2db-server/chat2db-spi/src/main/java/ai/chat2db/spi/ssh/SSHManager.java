@@ -1,8 +1,6 @@
 
 package ai.chat2db.spi.ssh;
 
-import java.security.Security;
-
 import ai.chat2db.server.tools.common.exception.ConnectionException;
 import ai.chat2db.spi.model.SSHInfo;
 import cn.hutool.core.net.NetUtil;
@@ -11,7 +9,6 @@ import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 /**
  * @author jipengfei
@@ -22,11 +19,10 @@ public class SSHManager {
 
     static {
         try {
-            Security.insertProviderAt(new BouncyCastleProvider(), 1);
             JSch.setConfig("kex", JSch.getConfig("kex") + ",diffie-hellman-group1-sha1");
             JSch.setConfig("server_host_key", JSch.getConfig("server_host_key") + ",ssh-rsa,ssh-dss");
-        }catch (Exception e){
-            log.error("SSHManager init error",e);
+        } catch (Exception e) {
+            log.error("SSHManager init error", e);
         }
     }
 

@@ -87,5 +87,7 @@
     "yizhoumo",
     "zustand"
   ],
-  "java.compile.nullAnalysis.mode": "automatic"
+  "java.compile.nullAnalysis.mode": "automatic",
+  "maven.view": "hierarchical",
+  "java.configuration.updateBuildConfiguration": "interactive"
 }

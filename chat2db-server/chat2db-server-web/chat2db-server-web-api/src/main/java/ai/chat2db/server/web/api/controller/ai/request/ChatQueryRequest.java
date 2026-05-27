@@ -18,6 +18,11 @@ import lombok.Data;
 public class ChatQueryRequest extends DataSourceBaseRequest {
 
     /**
+     * Override dataSourceId to allow null for TEXT_GENERATION prompt type
+     */
+    private Long dataSourceId;
+
+    /**
      * Enter message
      */
     private String message;

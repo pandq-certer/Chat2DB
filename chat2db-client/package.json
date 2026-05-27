@@ -19,6 +19,8 @@
     "build:web:prod": "cross-env UMI_ENV=prod cross-env APP_VERSION=${npm_config_app_version} cross-env APP_PORT=${npm_config_app_port} cross-env UMI_PublicPath=${npm_config_public_path} umi build",
     "postinstall": "umi setup",
     "lint": "umi lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "concurrently \"npm run start:web\" \"npm run start:main\"",
     "start:main": "cross-env NODE_ENV=development electron .",
     "start:main:prod": "cross-env NODE_ENV=production electron .",
@@ -78,7 +80,8 @@
     "prettier-plugin-organize-imports": "^2",
     "prettier-plugin-packagejson": "^2",
     "tailwindcss": "^3",
-    "typescript": "^5.0.3"
+    "typescript": "^5.0.3",
+    "vitest": "^3.2.4"
   },
   "peerDependencies": {
     "react": "^16.8.0",

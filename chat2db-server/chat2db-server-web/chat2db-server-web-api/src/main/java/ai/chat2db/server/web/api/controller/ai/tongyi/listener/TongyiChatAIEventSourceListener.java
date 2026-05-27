@@ -1,9 +1,11 @@
 package ai.chat2db.server.web.api.controller.ai.tongyi.listener;
 
+import ai.chat2db.server.web.api.controller.ai.config.LocalCache;
 import ai.chat2db.server.web.api.controller.ai.fastchat.model.FastChatChoice;
 import ai.chat2db.server.web.api.controller.ai.fastchat.model.FastChatCompletions;
 import ai.chat2db.server.web.api.controller.ai.fastchat.model.FastChatCompletionsUsage;
 import ai.chat2db.server.web.api.controller.ai.fastchat.model.FastChatMessage;
+import ai.chat2db.server.web.api.controller.ai.fastchat.model.FastChatRole;
 import ai.chat2db.server.web.api.controller.ai.tongyi.model.TongyiChatCompletions;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,6 +20,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -30,11 +33,14 @@ import java.util.Objects;
 public class TongyiChatAIEventSourceListener extends EventSourceListener {
 
     private SseEmitter sseEmitter;
+    private String uid;
+    private StringBuilder assistantResponse = new StringBuilder();
 
     private ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
-    public TongyiChatAIEventSourceListener(SseEmitter sseEmitter) {
+    public TongyiChatAIEventSourceListener(SseEmitter sseEmitter, String uid) {
         this.sseEmitter = sseEmitter;
+        this.uid = uid;
     }
 
     /**
@@ -54,6 +60,7 @@ public class TongyiChatAIEventSourceListener extends EventSourceListener {
         log.info("Tongyi Chat AI response data：{}", data);
         if (data.equals("[DONE]")) {
             log.info("Tongyi Chat AI closed");
+            saveAssistantResponse();
             sseEmitter.send(SseEmitter.event()
                 .id("[DONE]")
                 .data("[DONE]")
@@ -68,14 +75,37 @@ public class TongyiChatAIEventSourceListener extends EventSourceListener {
 
         Message message = new Message();
         message.setContent(text);
+        if (StringUtils.isNotBlank(text)) {
+            assistantResponse.append(text);
+        }
         sseEmitter.send(SseEmitter.event()
             .id(null)
             .data(message)
             .reconnectTime(3000));
     }
 
+    @SuppressWarnings("unchecked")
+    private void saveAssistantResponse() {
+        String responseText = assistantResponse.toString().trim();
+        if (StringUtils.isBlank(responseText) || StringUtils.isBlank(uid)) {
+            return;
+        }
+        try {
+            List<FastChatMessage> messages = (List<FastChatMessage>) LocalCache.CACHE.get(uid);
+            if (messages != null) {
+                FastChatMessage assistantMsg = new FastChatMessage(FastChatRole.ASSISTANT).setContent(responseText);
+                messages.add(assistantMsg);
+                LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
+                log.info("TongyiAI saved assistant response to cache, uid={}, history size={}", uid, messages.size());
+            }
+        } catch (Exception e) {
+            log.error("Failed to save assistant response to cache", e);
+        }
+    }
+
     @Override
     public void onClosed(EventSource eventSource) {
+        saveAssistantResponse();
         try {
             sseEmitter.send(SseEmitter.event()
                 .id("[DONE]")

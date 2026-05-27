@@ -294,6 +294,7 @@ $ git clone git@github.com:chat2db/Chat2DB.git
 
 ```bash
 node版本必须为16及以上 
+推荐本仓库使用 Node 18（配合项目根目录 `.nvmrc` 执行 `nvm use`）
 一定要用yarn
 $ cd Chat2DB/chat2db-client
 $ yarn
@@ -349,5 +350,4 @@ $ cp -r dist/index.html ../chat2db-server/chat2db-server-start/src/main/resource
 
 ## License
 The primary license used by this software is the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), supplemented by the [Chat2DB License](./Chat2DB_LICENSE).
-
 

@@ -37,6 +37,9 @@ spring:
 
 chat2db:
   version: 1.0.0
+  copilot:
+    enabled: true
+    base-url: http://127.0.0.1:8001
 
 # flywaydb outputs the log of executing sql
 logging:
@@ -70,7 +73,7 @@ chatgpt:
   # You can choose GPT3 or GPT35
   version: GPT35
   context:
-    length: 1
+    length: 20
 
 # Print the HTTP log
 logbook:

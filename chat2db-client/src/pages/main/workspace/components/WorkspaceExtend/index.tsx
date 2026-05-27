@@ -5,6 +5,7 @@ import { Popover } from 'antd';
 import Iconfont from '@/components/Iconfont';
 import Output from '@/components/Output';
 import SaveList from '../SaveList';
+import AIChatPanel from '../AIChatPanel';
 import { useWorkspaceStore } from '@/pages/main/workspace/store';
 import i18n from '@/i18n';
 
@@ -20,12 +21,12 @@ export const useWorkspaceExtend = () => {
   const { panelRight } = useWorkspaceStore((state) => state.layout);
 
   const toolbarConfig: IToolbar[] = [
-    // {
-    //   code: 'ai',
-    //   title: 'AI',
-    //   icon: '\ue8ad',
-    //   components: <div>ai</div>,
-    // },
+    {
+      code: 'aiChat',
+      title: i18n('chat.ai.panel.title'),
+      icon: '\ue70e',
+      components: <AIChatPanel />,
+    },
     {
       code: 'executiveLog',
       title: i18n('common.title.executiveLogging'),

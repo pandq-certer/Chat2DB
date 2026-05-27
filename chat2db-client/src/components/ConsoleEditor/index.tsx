@@ -23,6 +23,7 @@ import { AIType } from '@/typings/ai';
 import i18n from '@/i18n';
 import configService from '@/service/config';
 import styles from './index.less';
+import { formatSql } from '@/utils/sql';
 
 // ----- hooks -----
 import { useSaveEditorData } from './hooks/useSaveEditorData';
@@ -39,6 +40,64 @@ enum IPromptType {
   SQL_OPTIMIZER = 'SQL_OPTIMIZER',
   SQL_2_SQL = 'SQL_2_SQL',
   ChatRobot = 'ChatRobot',
+}
+
+function normalizeGeneratedSql(sql: string) {
+  if (!sql) {
+    return sql;
+  }
+  let result = sql.trim();
+  result = result
+    .replace(/^```(?:sql)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/^sql\s*/i, '');
+
+  const sqlKeywords = [
+    'SELECT',
+    'FROM',
+    'WHERE',
+    'GROUP',
+    'ORDER',
+    'LIMIT',
+    'OFFSET',
+    'HAVING',
+    'JOIN',
+    'INNER',
+    'LEFT',
+    'RIGHT',
+    'FULL',
+    'OUTER',
+    'INSERT',
+    'INTO',
+    'UPDATE',
+    'DELETE',
+    'VALUES',
+    'DISTINCT',
+  ];
+
+  result = result.replace(/\bORDERBY\b/gi, 'ORDER BY');
+  result = result.replace(/\bGROUPBY\b/gi, 'GROUP BY');
+  result = result.replace(/\bLEFTJOIN\b/gi, 'LEFT JOIN');
+  result = result.replace(/\bRIGHTJOIN\b/gi, 'RIGHT JOIN');
+  result = result.replace(/\bINNERJOIN\b/gi, 'INNER JOIN');
+  result = result.replace(/\bFULLJOIN\b/gi, 'FULL JOIN');
+  result = result.replace(/\bOUTERJOIN\b/gi, 'OUTER JOIN');
+
+  sqlKeywords.forEach((keyword) => {
+    result = result
+      .replace(new RegExp(`([\\w])(${keyword})(?=[\\w])`, 'gi'), '$1 $2 ')
+      .replace(new RegExp(`\\b(${keyword})(?=[\\w])`, 'gi'), '$1 ')
+      .replace(new RegExp(`([\\w])(${keyword})\\b`, 'gi'), '$1 $2');
+  });
+
+  result = result
+    .replace(/([*(),;])/g, ' $1 ')
+    .replace(/\bLIMIT\s*(\d+)/gi, 'LIMIT $1')
+    .replace(/\bOFFSET\s*(\d+)/gi, 'OFFSET $1')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return result;
 }
 
 export type IAppendValue = {
@@ -198,6 +257,7 @@ function ConsoleEditor(props: IProps, ref: ForwardedRef<IConsoleRef>) {
 
     const { dataSourceId, databaseName, schemaName } = boundInfo;
     const isNL2SQL = promptType === IPromptType.NL_2_SQL;
+    chatResult.current = '';
     if (isNL2SQL) {
       setIsLoading(true);
     } else {
@@ -228,7 +288,20 @@ function ConsoleEditor(props: IProps, ref: ForwardedRef<IConsoleRef>) {
             fetchRemainingUse(apiKey);
           }
           if (isNL2SQL) {
-            editorRef?.current?.setValue('\n');
+            const normalizedSql = normalizeGeneratedSql(chatResult.current);
+            formatSql(normalizedSql, boundInfo.databaseType!).then((res) => {
+              const finalSql = res || normalizedSql;
+              editorRef?.current?.setValue(finalSql, 'reset');
+              // 只读SQL自动执行（SELECT/SHOW/DESCRIBE/EXPLAIN）
+              const isReadOnly = /^\s*(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN)\s/i.test(
+                finalSql.trim(),
+              );
+              if (isReadOnly) {
+                executeSQL(finalSql);
+              }
+            });
+            chatResult.current = '';
+            return;
           } else {
             setIsAiDrawerLoading(false);
             chatResult.current += '\n';
@@ -268,7 +341,19 @@ function ConsoleEditor(props: IProps, ref: ForwardedRef<IConsoleRef>) {
         }
 
         if (isNL2SQL) {
-          editorRef?.current?.setValue(JSON.parse(_message).content);
+          const content = JSON.parse(_message).content || '';
+          // 兼容两种API: 累积全量返回（直接替换）和增量返回（追加）
+          if (!chatResult.current || content.startsWith(chatResult.current)) {
+            chatResult.current = content;
+          } else {
+            chatResult.current += content;
+          }
+          // 流式显示时清理代码围栏
+          const displaySql = chatResult.current
+            .replace(/^```(?:sql)?\s*/i, '')
+            .replace(/```\s*$/i, '')
+            .trim();
+          editorRef?.current?.setValue(displaySql, 'reset');
         } else {
           chatResult.current += JSON.parse(_message).content;
           setAiContent(chatResult.current);

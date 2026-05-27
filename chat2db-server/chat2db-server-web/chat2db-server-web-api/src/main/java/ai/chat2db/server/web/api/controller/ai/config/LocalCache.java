@@ -12,9 +12,9 @@ import cn.hutool.core.date.DateUnit;
  */
 public class LocalCache {
     /**
-     * Cache duration
+     * Cache duration (30 minutes for multi-turn conversation support)
      */
-    public static final long TIMEOUT = 5 * DateUnit.MINUTE.getMillis();
+    public static final long TIMEOUT = 30 * DateUnit.MINUTE.getMillis();
     /**
      * Cleanup interval
      */

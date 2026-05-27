@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Divider, Select, Typography } from 'antd';
 import connection from '@/service/connection';
 import cs from 'classnames';
@@ -9,7 +9,7 @@ import { databaseMap } from '@/constants/database';
 interface IProps {
   className?: string;
   curConnectionId?: number;
-  onChange?: (value: { dataSourceId: number; databaseName: string; schemaName: string }) => void;
+  onChange?: (value: { dataSourceId: number; databaseName: string; schemaName: string; dataSourceName?: string }) => void;
 }
 
 interface IOption {
@@ -27,6 +27,15 @@ function CascaderDB(props: IProps) {
   const [schemaOptions, setSchemaOptions] = useState<IOption[]>([]);
   const [curSchemeName, setCurSchemeName] = useState<string>('');
 
+  const dataSourceAliases = useRef<Record<number, string>>({});
+
+  const notifyChange = (params: { dataSourceId: number; databaseName: string; schemaName: string }) => {
+    props.onChange?.({
+      ...params,
+      dataSourceName: dataSourceAliases.current[params.dataSourceId],
+    });
+  };
+
   useEffect(() => {
     loadDataSource();
   }, []);
@@ -37,63 +46,56 @@ function CascaderDB(props: IProps) {
     loadSchema();
   }, [curDatabaseName]);
 
-  const handleChangeDataSource = (value) => {
+  const handleChangeDataSource = (value: number) => {
     setCurDataSourceId(value);
     setDatabaseOptions([]);
     setSchemaOptions([]);
     setCurDatabaseName('');
     setCurSchemeName('');
 
-    props.onChange &&
-      props.onChange({
-        dataSourceId: value,
-        databaseName: '',
-        schemaName: '',
-      });
+    notifyChange({ dataSourceId: value, databaseName: '', schemaName: '' });
   };
-  const handleChangeDatabase = (value) => {
+  const handleChangeDatabase = (value: string) => {
     setCurDatabaseName(value);
     setSchemaOptions([]);
     setCurSchemeName('');
 
-    props.onChange &&
-      props.onChange({
-        dataSourceId: curDataSourceId!,
-        databaseName: value,
-        schemaName: '',
-      });
+    notifyChange({ dataSourceId: curDataSourceId!, databaseName: value, schemaName: '' });
   };
 
-  const handleChangeSchema = (value) => {
+  const handleChangeSchema = (value: string) => {
     setCurSchemeName(value);
 
-    props.onChange &&
-      props.onChange({ dataSourceId: curDataSourceId!, databaseName: curDatabaseName, schemaName: value });
+    notifyChange({ dataSourceId: curDataSourceId!, databaseName: curDatabaseName, schemaName: value });
   };
 
   /** 加载DataSource数据 */
   const loadDataSource = async () => {
-    // 请求 dataSource 数据
     const dataSourceList = await connection.getList({
       pageNo: 1,
       pageSize: 999,
       refresh: true,
     });
-    const formattedData = (dataSourceList?.data || []).map((item) => ({
-      ...item,
-      key: `dataSource-${item.id}`,
-      value: item.id,
-      label: (
-        <div className={styles.optionItem}>
-          <Iconfont className={styles.optionItemIcon} code={databaseMap[item.type]?.icon} />
-          <div className={styles.optionItemText}>{item.alias}</div>
-        </div>
-      ),
-    }));
+    const formattedData = (dataSourceList?.data || []).map((item) => {
+      dataSourceAliases.current[item.id] = item.alias;
+      return {
+        ...item,
+        key: `dataSource-${item.id}`,
+        value: item.id,
+        label: (
+          <div className={styles.optionItem}>
+            <Iconfont className={styles.optionItemIcon} code={databaseMap[item.type]?.icon} />
+            <div className={styles.optionItemText}>{item.alias}</div>
+          </div>
+        ),
+      };
+    });
     setDataSourceOptions(formattedData);
 
-    if (curDataSourceId === undefined) {
-      setCurDataSourceId(formattedData[0]?.value);
+    if (curDataSourceId === undefined && formattedData[0]?.value !== undefined) {
+      const firstId = formattedData[0].value as number;
+      setCurDataSourceId(firstId);
+      notifyChange({ dataSourceId: firstId, databaseName: '', schemaName: '' });
     }
   };
 
@@ -119,8 +121,10 @@ function CascaderDB(props: IProps) {
     }));
 
     setDatabaseOptions(formattedData);
-    if (!curDatabaseName) {
-      setCurDatabaseName(formattedData[0]?.value);
+    if (!curDatabaseName && formattedData[0]?.value !== undefined) {
+      const firstName = formattedData[0].value as string;
+      setCurDatabaseName(firstName);
+      notifyChange({ dataSourceId: curDataSourceId!, databaseName: firstName, schemaName: '' });
     }
   };
 
@@ -147,8 +151,10 @@ function CascaderDB(props: IProps) {
     }));
 
     setSchemaOptions(formattedData);
-    if (!curSchemeName) {
-      setCurSchemeName(formattedData[0]?.value);
+    if (!curSchemeName && formattedData[0]?.value !== undefined) {
+      const firstName = formattedData[0].value as string;
+      setCurSchemeName(firstName);
+      notifyChange({ dataSourceId: curDataSourceId!, databaseName: curDatabaseName, schemaName: firstName });
     }
   };
 

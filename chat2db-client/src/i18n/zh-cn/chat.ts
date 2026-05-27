@@ -6,4 +6,7 @@ export default {
   'chat.input.syncTable.tips': '自动同步所有表结构给AI上下文（在群内联系群主，申请Chat2DBAI白名单后，仅在Chat2DBAI模型下可用）',
   'chat.input.remain.tooltip': '手动选中的表的结构将会同步给AI上下文',
   'chat.input.syncTable.tempTips': '🎉上线：自动同步所有表结构到AI上下文',
+  'chat.ai.panel.title': 'AI 助手',
+  'chat.ai.panel.placeholder': '输入消息，@选择数据源...',
+  'chat.ai.panel.newChat': '新建对话',
 };

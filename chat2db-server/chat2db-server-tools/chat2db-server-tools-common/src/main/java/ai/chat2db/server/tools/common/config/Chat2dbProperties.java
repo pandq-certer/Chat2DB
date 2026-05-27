@@ -30,11 +30,25 @@ public class Chat2dbProperties {
      */
     private ModeEnum mode;
 
+    /**
+     * copilot
+     */
+    private CopilotProperties copilot;
+
     @Data
     public static class GatewayProperties {
 
         private String baseUrl;
         private String modelBaseUrl;
+
+    }
+
+    @Data
+    public static class CopilotProperties {
+
+        private boolean enabled = false;
+
+        private String baseUrl = "http://localhost:8000";
 
     }
 }

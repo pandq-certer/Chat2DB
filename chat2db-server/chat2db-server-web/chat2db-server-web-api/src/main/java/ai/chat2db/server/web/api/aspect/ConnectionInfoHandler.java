@@ -46,7 +46,9 @@ public class ConnectionInfoHandler {
                         Long dataSourceId = ((DataSourceBaseRequest) param).getDataSourceId();
                         String schemaName = ((DataSourceBaseRequest) param).getSchemaName();
                         String database = ((DataSourceBaseRequest) param).getDatabaseName();
-                        Chat2DBContext.putContext(toInfo(dataSourceId, database, null, schemaName));
+                        if (dataSourceId != null) {
+                            Chat2DBContext.putContext(toInfo(dataSourceId, database, null, schemaName));
+                        }
                     } else if (param instanceof DataSourceConsoleRequestInfo) {
                         Long dataSourceId = ((DataSourceConsoleRequestInfo) param).getDataSourceId();
                         Long consoleId = ((DataSourceConsoleRequestInfo) param).getConsoleId();

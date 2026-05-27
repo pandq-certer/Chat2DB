@@ -4,12 +4,14 @@ import ai.chat2db.server.domain.api.enums.AiSqlSourceEnum;
 import ai.chat2db.server.domain.api.model.Config;
 import ai.chat2db.server.domain.api.model.DataSource;
 import ai.chat2db.server.domain.api.param.ShowCreateTableParam;
+import ai.chat2db.server.domain.api.param.TablePageQueryParam;
 import ai.chat2db.server.domain.api.param.TableQueryParam;
 import ai.chat2db.server.domain.api.service.ConfigService;
 import ai.chat2db.server.domain.api.service.DataSourceService;
 import ai.chat2db.server.domain.api.service.TableService;
 import ai.chat2db.server.tools.base.enums.WhiteListTypeEnum;
 import ai.chat2db.server.tools.base.wrapper.result.DataResult;
+import ai.chat2db.server.tools.base.wrapper.result.ListResult;
 import ai.chat2db.server.tools.common.exception.ParamBusinessException;
 import ai.chat2db.server.tools.common.util.EasyEnumUtils;
 import ai.chat2db.server.web.api.aspect.ConnectionInfoAspect;
@@ -54,6 +56,8 @@ import ai.chat2db.server.web.api.http.request.WhiteListRequest;
 import ai.chat2db.server.web.api.http.response.EsTableSchemaResponse;
 import ai.chat2db.server.web.api.http.response.TableSchemaResponse;
 import ai.chat2db.server.web.api.util.ApplicationContextUtil;
+import ai.chat2db.spi.model.SimpleTable;
+import ai.chat2db.spi.model.TableColumn;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.alibaba.fastjson2.JSON;
@@ -267,9 +271,9 @@ public class ChatController {
 
         buildSseEmitter(sseEmitter, uid);
 
-        RestAIEventSourceListener restAIEventSourceListener = new RestAIEventSourceListener(sseEmitter);
+        RestAIEventSourceListener restAIEventSourceListener = new RestAIEventSourceListener(sseEmitter, uid);
         RestAIClient.getInstance().streamCompletions(messages, restAIEventSourceListener);
-        LocalCache.CACHE.put(uid, JSONUtil.toJsonStr(messages), LocalCache.TIMEOUT);
+        LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
         return sseEmitter;
     }
 
@@ -353,18 +357,19 @@ public class ChatController {
         }
         List<AzureChatMessage> messages = (List<AzureChatMessage>)LocalCache.CACHE.get(uid);
         if (CollectionUtils.isNotEmpty(messages)) {
-            if (messages.size() >= contextLength) {
-                messages = messages.subList(1, contextLength);
+            messages = new ArrayList<>(messages);
+            while (messages.size() >= contextLength) {
+                messages.remove(0);
             }
         } else {
-            messages = Lists.newArrayList();
+            messages = new ArrayList<>();
         }
         AzureChatMessage currentMessage = new AzureChatMessage(AzureChatRole.USER).setContent(prompt);
         messages.add(currentMessage);
 
         buildSseEmitter(sseEmitter, uid);
 
-        AzureOpenAIEventSourceListener sourceListener = new AzureOpenAIEventSourceListener(sseEmitter);
+        AzureOpenAIEventSourceListener sourceListener = new AzureOpenAIEventSourceListener(sseEmitter, uid);
         AzureOpenAIClient.getInstance().streamCompletions(messages, sourceListener);
         LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
         return sseEmitter;
@@ -385,7 +390,7 @@ public class ChatController {
 
         buildSseEmitter(sseEmitter, uid);
 
-        FastChatAIEventSourceListener sourceListener = new FastChatAIEventSourceListener(sseEmitter);
+        FastChatAIEventSourceListener sourceListener = new FastChatAIEventSourceListener(sseEmitter, uid);
         FastChatAIClient.getInstance().streamCompletions(messages, sourceListener);
         LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
         return sseEmitter;
@@ -406,7 +411,7 @@ public class ChatController {
 
         buildSseEmitter(sseEmitter, uid);
 
-        ZhipuChatAIEventSourceListener sourceListener = new ZhipuChatAIEventSourceListener(sseEmitter);
+        ZhipuChatAIEventSourceListener sourceListener = new ZhipuChatAIEventSourceListener(sseEmitter, uid);
         ZhipuChatAIClient.getInstance().streamCompletions(messages, sourceListener);
         LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
         return sseEmitter;
@@ -427,7 +432,7 @@ public class ChatController {
 
         buildSseEmitter(sseEmitter, uid);
 
-        TongyiChatAIEventSourceListener sourceListener = new TongyiChatAIEventSourceListener(sseEmitter);
+        TongyiChatAIEventSourceListener sourceListener = new TongyiChatAIEventSourceListener(sseEmitter, uid);
         TongyiChatAIClient.getInstance().streamCompletions(messages, sourceListener);
         LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
         return sseEmitter;
@@ -448,27 +453,32 @@ public class ChatController {
 
         buildSseEmitter(sseEmitter, uid);
 
-        BaichuanChatAIEventSourceListener sourceListener = new BaichuanChatAIEventSourceListener(sseEmitter);
+        BaichuanChatAIEventSourceListener sourceListener = new BaichuanChatAIEventSourceListener(sseEmitter, uid);
         BaichuanAIClient.getInstance().streamCompletions(messages, sourceListener);
         LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
         return sseEmitter;
     }
 
     /**
-     * get fast chat message
+     * get fast chat message with proper multi-turn history.
+     * Maintains a sliding window of conversation turns (user + assistant pairs).
      *
      * @param uid
      * @param prompt
      * @return
      */
     private List<FastChatMessage> getFastChatMessage(String uid, String prompt) {
-        List<FastChatMessage> messages = (List<FastChatMessage>)LocalCache.CACHE.get(uid);
-        if (CollectionUtils.isNotEmpty(messages)) {
-            if (messages.size() >= contextLength) {
-                messages = messages.subList(1, contextLength);
+        List<FastChatMessage> cached = (List<FastChatMessage>)LocalCache.CACHE.get(uid);
+        List<FastChatMessage> messages;
+        if (CollectionUtils.isNotEmpty(cached)) {
+            // Copy to avoid modifying cached list through subList views
+            messages = new ArrayList<>(cached);
+            // Sliding window: keep last (contextLength - 1) messages, room for the new one
+            while (messages.size() >= contextLength) {
+                messages.remove(0);
             }
         } else {
-            messages = Lists.newArrayList();
+            messages = new ArrayList<>();
         }
         FastChatMessage currentMessage = new FastChatMessage(FastChatRole.USER).setContent(prompt);
         messages.add(currentMessage);
@@ -493,7 +503,7 @@ public class ChatController {
 
         buildSseEmitter(sseEmitter, uid);
 
-        WenxinAIEventSourceListener sourceListener = new WenxinAIEventSourceListener(sseEmitter);
+        WenxinAIEventSourceListener sourceListener = new WenxinAIEventSourceListener(sseEmitter, uid);
         WenxinAIClient.getInstance().streamCompletions(messages, sourceListener);
         LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
         return sseEmitter;
@@ -606,6 +616,28 @@ public class ChatController {
             return queryRequest.getMessage();
         }
 
+        // SQL_CHECK: validate and fix SQL syntax for the specific database type
+        if (PromptType.SQL_CHECK.getCode().equals(queryRequest.getPromptType())) {
+            String dbType = queryDatabaseType(queryRequest);
+            return String.format(
+                "You are a SQL syntax validator. The database type is %s.\n"
+                + "Carefully check the following SQL for syntax errors.\n"
+                + "Fix any syntax issues to ensure it is valid %s SQL.\n"
+                + "If the SQL is already correct, return it unchanged.\n\n"
+                + "Pay special attention to:\n"
+                + "- Correct JOIN syntax and table alias usage\n"
+                + "- Proper quoting of identifiers and string literals for %s\n"
+                + "- Correct function names and parameter syntax for %s\n"
+                + "- Proper use of parentheses and logical operators\n\n"
+                + "Response Rules:\n"
+                + "- Return only the raw SQL statement.\n"
+                + "- Do not wrap SQL in markdown code fences.\n"
+                + "- Do not prefix the answer with sql or any explanation.\n\n"
+                + "SQL to check:\n%s",
+                dbType, dbType, dbType, dbType, queryRequest.getMessage()
+            );
+        }
+
         // Query schema information
         String dataSourceType = queryDatabaseType(queryRequest);
         String properties = "";
@@ -614,17 +646,21 @@ public class ChatController {
             properties = buildTableColumn(queryParam, queryRequest.getTableNames());
         } else {
             properties = mappingDatabaseSchema(queryRequest);
+            if (StringUtils.isEmpty(properties)) {
+                properties = fallbackQueryTableSchema(queryRequest);
+            }
         }
         String prompt = queryRequest.getMessage();
         String promptType = StringUtils.isBlank(queryRequest.getPromptType()) ? PromptType.NL_2_SQL.getCode()
             : queryRequest.getPromptType();
         PromptType pType = EasyEnumUtils.getEnum(PromptType.class, promptType);
         String ext = StringUtils.isNotBlank(queryRequest.getExt()) ? queryRequest.getExt() : "";
+        String outputRule = "### Response Rules:\n#\n# - Return only the raw SQL statement.\n# - Do not wrap SQL in markdown code fences.\n# - Do not prefix the answer with `sql` or any explanation.\n#";
         String schemaProperty = StringUtils.isNotEmpty(properties) ? String.format(
-            "### Please follow the below table properties and SQL input%s. %s\n#\n### %s SQL tables, with their properties:\n#\n# "
+            "%s\n#\n### Please follow the below table properties and SQL input%s. %s\n#\n### SQL tables, with their properties:\n#\n# "
                 + "%s\n#\n#\n### SQL input: %s", pType.getDescription(), ext, dataSourceType,
-            properties, prompt) : String.format("### Please follow the below SQL input%s. %s\n#\n### SQL input: %s",
-            pType.getDescription(), ext, prompt);
+            properties, prompt) : String.format("%s\n#\n### Please follow the below SQL input%s. %s\n#\n### SQL input: %s",
+            outputRule, pType.getDescription(), ext, prompt);
         switch (pType) {
             case SQL_2_SQL:
                 schemaProperty = StringUtils.isNotBlank(queryRequest.getDestSqlType()) ? String.format(
@@ -684,6 +720,90 @@ public class ChatController {
             }
         }
         return properties;
+    }
+
+    /**
+     * Fallback: query table schemas directly from database metadata when vector search is unavailable.
+     * Returns a concise schema description: TableName(comment): col1 type1, col2 type2, ...
+     * Prioritizes tables whose name or comment matches keywords from the user's message.
+     */
+    private String fallbackQueryTableSchema(ChatQueryRequest queryRequest) {
+        if (Objects.isNull(queryRequest.getDataSourceId())) {
+            return "";
+        }
+        try {
+            TablePageQueryParam tableParam = new TablePageQueryParam();
+            tableParam.setDataSourceId(queryRequest.getDataSourceId());
+            tableParam.setDatabaseName(queryRequest.getDatabaseName());
+            tableParam.setSchemaName(queryRequest.getSchemaName());
+            ListResult<SimpleTable> tableResult = tableService.queryTables(tableParam);
+            if (tableResult == null || CollectionUtils.isEmpty(tableResult.getData())) {
+                return "";
+            }
+
+            // Extract keywords from user message for relevance matching
+            String message = StringUtils.defaultString(queryRequest.getMessage()).toLowerCase();
+            List<SimpleTable> allTables = tableResult.getData();
+
+            // Score tables by relevance to user query
+            List<SimpleTable> scored = allTables.stream().sorted((a, b) -> {
+                int scoreA = tableRelevanceScore(a, message);
+                int scoreB = tableRelevanceScore(b, message);
+                return Integer.compare(scoreB, scoreA); // descending
+            }).collect(Collectors.toList());
+
+            // Take top 15 most relevant tables
+            int limit = Math.min(scored.size(), 15);
+            List<String> schemaList = new ArrayList<>();
+            for (int i = 0; i < limit; i++) {
+                SimpleTable table = scored.get(i);
+                TableQueryParam colParam = chatConverter.chat2tableQuery(queryRequest);
+                colParam.setTableName(table.getName());
+                List<TableColumn> columns = tableService.queryColumns(colParam);
+                StringBuilder sb = new StringBuilder();
+                sb.append(table.getName());
+                if (StringUtils.isNotBlank(table.getComment())) {
+                    sb.append("(").append(table.getComment()).append(")");
+                }
+                sb.append(": ");
+                if (CollectionUtils.isNotEmpty(columns)) {
+                    sb.append(columns.stream().map(c -> {
+                        String def = c.getName() + " " + c.getColumnType();
+                        if (Boolean.TRUE.equals(c.getPrimaryKey())) {
+                            def += " PK";
+                        }
+                        return def;
+                    }).collect(Collectors.joining(", ")));
+                }
+                schemaList.add(sb.toString());
+            }
+            return JSON.toJSONString(schemaList);
+        } catch (Exception e) {
+            log.error("fallbackQueryTableSchema error", e);
+            return "";
+        }
+    }
+
+    private int tableRelevanceScore(SimpleTable table, String message) {
+        if (StringUtils.isEmpty(message)) return 0;
+        int score = 0;
+        String tableName = StringUtils.defaultString(table.getName()).toLowerCase();
+        String comment = StringUtils.defaultString(table.getComment()).toLowerCase();
+
+        // Exact table name in message
+        if (message.contains(tableName)) score += 100;
+        // Table name parts (split by underscore) in message
+        String[] parts = tableName.split("_");
+        for (String part : parts) {
+            if (part.length() >= 2 && message.contains(part)) score += 20;
+        }
+        // Comment words in message
+        if (StringUtils.isNotEmpty(comment)) {
+            for (String word : comment.split("[\\s,，、（）()]+")) {
+                if (word.length() >= 2 && message.contains(word)) score += 15;
+            }
+        }
+        return score;
     }
 
     /**

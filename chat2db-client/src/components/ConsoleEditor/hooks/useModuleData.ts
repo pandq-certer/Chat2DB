@@ -29,10 +29,7 @@ export const useModuleData = (props: IProps) => {
       .then((data) => {
         const tableNameListTemp = data.map((t) => t.name);
         setTableNameList(tableNameListTemp);
-
-        if (selectedTables.length === 0) {
-          setSelectedTables(tableNameListTemp.slice(0, 1));
-        }
+        setSelectedTables([]);
       });
   }, []);
 

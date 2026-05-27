@@ -287,6 +287,7 @@ $ git clone git@github.com:chat2db/Chat2DB.git
 
 ```bash
 Node version must be 16 or higher  
+Recommended for this repo: Node 18 (use `nvm use` with the project `.nvmrc`)  
 Use yarn only, npm is not supported
 $ cd Chat2DB/chat2db-client
 $ yarn

@@ -1,12 +1,15 @@
 package ai.chat2db.server.web.api.controller.ai.azure.listener;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 
 import ai.chat2db.server.web.api.controller.ai.azure.model.AzureChatChoice;
 import ai.chat2db.server.web.api.controller.ai.azure.model.AzureChatCompletions;
 import ai.chat2db.server.web.api.controller.ai.azure.model.AzureChatMessage;
+import ai.chat2db.server.web.api.controller.ai.azure.model.AzureChatRole;
 import ai.chat2db.server.web.api.controller.ai.azure.model.AzureCompletionsUsage;
+import ai.chat2db.server.web.api.controller.ai.config.LocalCache;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.unfbx.chatgpt.entity.chat.Message;
@@ -29,11 +32,14 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class AzureOpenAIEventSourceListener extends EventSourceListener {
 
     private SseEmitter sseEmitter;
+    private String uid;
+    private StringBuilder assistantResponse = new StringBuilder();
 
     private ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
-    public AzureOpenAIEventSourceListener(SseEmitter sseEmitter) {
+    public AzureOpenAIEventSourceListener(SseEmitter sseEmitter, String uid) {
         this.sseEmitter = sseEmitter;
+        this.uid = uid;
     }
 
     /**
@@ -53,6 +59,7 @@ public class AzureOpenAIEventSourceListener extends EventSourceListener {
         log.info("AzureOpenAI returns data: {}", data);
         if (data.equals("[DONE]")) {
             log.info("AzureOpenAI returns data ended");
+            saveAssistantResponse();
             sseEmitter.send(SseEmitter.event()
                 .id("[DONE]")
                 .data("[DONE]")
@@ -85,14 +92,37 @@ public class AzureOpenAIEventSourceListener extends EventSourceListener {
 
         Message message = new Message();
         message.setContent(text);
+        if (StringUtils.isNotBlank(text)) {
+            assistantResponse.append(text);
+        }
         sseEmitter.send(SseEmitter.event()
             .id(null)
             .data(message)
             .reconnectTime(3000));
     }
 
+    @SuppressWarnings("unchecked")
+    private void saveAssistantResponse() {
+        String responseText = assistantResponse.toString().trim();
+        if (StringUtils.isBlank(responseText) || StringUtils.isBlank(uid)) {
+            return;
+        }
+        try {
+            List<AzureChatMessage> messages = (List<AzureChatMessage>) LocalCache.CACHE.get(uid);
+            if (messages != null) {
+                AzureChatMessage assistantMsg = new AzureChatMessage(AzureChatRole.ASSISTANT).setContent(responseText);
+                messages.add(assistantMsg);
+                LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
+                log.info("AzureAI saved assistant response to cache, uid={}, history size={}", uid, messages.size());
+            }
+        } catch (Exception e) {
+            log.error("Failed to save assistant response to cache", e);
+        }
+    }
+
     @Override
     public void onClosed(EventSource eventSource) {
+        saveAssistantResponse();
         try {
             sseEmitter.send(SseEmitter.event()
                 .id("[DONE]")

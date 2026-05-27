@@ -1,10 +1,14 @@
 package ai.chat2db.server.web.api.controller.ai.rest.listener;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 
+import ai.chat2db.server.web.api.controller.ai.config.LocalCache;
+import ai.chat2db.server.web.api.controller.ai.fastchat.model.FastChatChoice;
+import ai.chat2db.server.web.api.controller.ai.fastchat.model.FastChatMessage;
+import ai.chat2db.server.web.api.controller.ai.fastchat.model.FastChatRole;
 import ai.chat2db.server.web.api.controller.ai.rest.model.RestAIChatCompletions;
-import ai.chat2db.server.web.api.controller.ai.zhipu.model.ZhipuChatCompletions;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.unfbx.chatgpt.entity.chat.Message;
@@ -27,9 +31,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class RestAIEventSourceListener extends EventSourceListener {
 
     private SseEmitter sseEmitter;
+    private String uid;
+    private StringBuilder assistantResponse = new StringBuilder();
 
-    public RestAIEventSourceListener(SseEmitter sseEmitter) {
+    public RestAIEventSourceListener(SseEmitter sseEmitter, String uid) {
         this.sseEmitter = sseEmitter;
+        this.uid = uid;
     }
 
     private ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
@@ -51,6 +58,7 @@ public class RestAIEventSourceListener extends EventSourceListener {
         String end = "[DONE]";
         if (data.equals(end)) {
             log.info("REST AI returns data finished");
+            saveAssistantResponse();
             sseEmitter.send(SseEmitter.event()
                 .id(end)
                 .data(end)
@@ -58,17 +66,50 @@ public class RestAIEventSourceListener extends EventSourceListener {
             sseEmitter.complete();
             return;
         }
-        Message message = new Message();
         if (StringUtils.isNotBlank(data)) {
-            RestAIChatCompletions chatCompletions = mapper.readValue(data, RestAIChatCompletions.class);
-            String text = chatCompletions.getChoices().get(0).getDelta()==null?
-                    chatCompletions.getChoices().get(0).getText()
-                    :chatCompletions.getChoices().get(0).getDelta().getContent();
-            message.setContent(text);
-            sseEmitter.send(SseEmitter.event()
-                .id(id)
-                .data(message)
-                .reconnectTime(3000));
+            try {
+                RestAIChatCompletions chatCompletions = mapper.readValue(data, RestAIChatCompletions.class);
+                if (chatCompletions.getChoices() == null || chatCompletions.getChoices().isEmpty()) {
+                    return;
+                }
+                FastChatChoice choice = chatCompletions.getChoices().get(0);
+                String text = choice.getDelta() == null
+                        ? choice.getText()
+                        : choice.getDelta().getContent();
+                if (StringUtils.isNotBlank(text)) {
+                    assistantResponse.append(text);
+                    Message message = new Message();
+                    message.setContent(text);
+                    sseEmitter.send(SseEmitter.event()
+                        .id(id)
+                        .data(message)
+                        .reconnectTime(3000));
+                }
+            } catch (Exception e) {
+                log.error("Failed to parse REST AI response: {}", data, e);
+            }
+        }
+    }
+
+    /**
+     * Save the accumulated assistant response to the conversation cache.
+     */
+    @SuppressWarnings("unchecked")
+    private void saveAssistantResponse() {
+        String responseText = assistantResponse.toString().trim();
+        if (StringUtils.isBlank(responseText) || StringUtils.isBlank(uid)) {
+            return;
+        }
+        try {
+            List<FastChatMessage> messages = (List<FastChatMessage>) LocalCache.CACHE.get(uid);
+            if (messages != null) {
+                FastChatMessage assistantMsg = new FastChatMessage(FastChatRole.ASSISTANT).setContent(responseText);
+                messages.add(assistantMsg);
+                LocalCache.CACHE.put(uid, messages, LocalCache.TIMEOUT);
+                log.info("REST AI saved assistant response to cache, uid={}, history size={}", uid, messages.size());
+            }
+        } catch (Exception e) {
+            log.error("Failed to save assistant response to cache", e);
         }
     }
 
@@ -76,6 +117,7 @@ public class RestAIEventSourceListener extends EventSourceListener {
     @Override
     public void onClosed(EventSource eventSource) {
         log.info("REST AI close sse connection...");
+        saveAssistantResponse();
         try {
             sseEmitter.send(SseEmitter.event()
                     .id("[DONE]")

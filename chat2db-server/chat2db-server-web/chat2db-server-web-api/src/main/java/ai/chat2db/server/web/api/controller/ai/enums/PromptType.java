@@ -35,6 +35,11 @@ public enum PromptType implements BaseEnum<String> {
     SQL_2_SQL("Perform SQL conversion"),
 
     /**
+     * Check and fix SQL syntax for the specified database type
+     */
+    SQL_CHECK("Check and fix SQL syntax for the specified database type"),
+
+    /**
      * text generation
      */
     TEXT_GENERATION("text generation"),
